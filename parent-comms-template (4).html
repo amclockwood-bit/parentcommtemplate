@@ -1,0 +1,1434 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Parent Communication Tracker</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:       #0d0d12;
+    --surface:  #16151f;
+    --card:     #1e1c2a;
+    --border:   #2e2b40;
+    --magenta:  #e040fb;
+    --violet:   #c084fc;
+    --pink:     #f472b6;
+    --muted:    #7c6fa0;
+    --text:     #e8d5ff;
+    --dim:      #a08cc0;
+    --red:      #ff6b8a;
+    --amber:    #f59e0b;
+    --blue:     #60a5fa;
+    --green:    #34d399;
+    --teal:     #00e5cc;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: 'DM Sans', sans-serif; min-height: 100vh;
+    background-image:
+      radial-gradient(ellipse 60% 40% at 10% 0%, rgba(192,132,252,0.07) 0%, transparent 60%),
+      radial-gradient(ellipse 40% 30% at 90% 100%, rgba(224,64,251,0.05) 0%, transparent 60%);
+  }
+
+  /* ── Wizard ── */
+  #wizardOverlay {
+    display: none; position: fixed; inset: 0; background: rgba(0,0,0,.85);
+    backdrop-filter: blur(8px); z-index: 500;
+    align-items: center; justify-content: center; padding: 20px;
+  }
+  #wizardOverlay.show { display: flex; }
+  .wizard {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 18px;
+    width: 100%; max-width: 600px; max-height: 90vh; overflow-y: auto;
+  }
+  .wiz-hdr {
+    padding: 28px 32px 0;
+    background: linear-gradient(135deg, rgba(224,64,251,.08), rgba(192,132,252,.05));
+    border-radius: 18px 18px 0 0;
+  }
+  .wiz-step-indicator {
+    display: flex; gap: 6px; margin-bottom: 20px;
+  }
+  .wiz-pip { height: 3px; border-radius: 2px; flex: 1; background: var(--border); transition: background .3s; }
+  .wiz-pip.done { background: var(--magenta); }
+  .wiz-pip.active { background: var(--violet); }
+  .wiz-icon { font-size: 32px; margin-bottom: 12px; }
+  .wiz-title { font-family: 'DM Serif Display', serif; font-size: 22px; color: var(--violet); margin-bottom: 6px; }
+  .wiz-sub { font-size: 14px; color: var(--dim); line-height: 1.6; margin-bottom: 24px; }
+  .wiz-body { padding: 24px 32px 32px; }
+  .wiz-step { display: none; }
+  .wiz-step.active { display: block; }
+
+  .wiz-field { margin-bottom: 18px; }
+  .wiz-field label { display: block; font-family: 'DM Mono', monospace; font-size: 10px; text-transform: uppercase; letter-spacing: .12em; color: var(--muted); margin-bottom: 7px; }
+  .wiz-field input, .wiz-field select {
+    background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+    color: var(--text); font-family: 'DM Sans', sans-serif; font-size: 14px;
+    padding: 10px 14px; outline: none; width: 100%; transition: border-color .2s, box-shadow .2s;
+    -webkit-appearance: none;
+  }
+  .wiz-field input:focus, .wiz-field select:focus { border-color: var(--violet); box-shadow: 0 0 0 3px rgba(192,132,252,.12); }
+  .wiz-field .hint { font-size: 12px; color: var(--muted); margin-top: 6px; line-height: 1.5; }
+  .wiz-field .hint a { color: var(--violet); }
+  .theme-chip { background: var(--card); border: 2px solid var(--border); border-radius: 8px; padding: 10px; cursor: pointer; transition: all .2s; text-align: center; }
+  .theme-chip:hover { border-color: var(--tc, var(--violet)); }
+  .theme-chip.selected { border-color: var(--tc, var(--magenta)); box-shadow: 0 0 0 1px var(--tc, var(--magenta)); }
+  .theme-swatch { width: 100%; height: 28px; border-radius: 6px; margin-bottom: 6px; }
+  .theme-name { font-family: 'DM Mono', monospace; font-size: 10px; color: var(--muted); }
+
+  .wiz-btns { display: flex; gap: 12px; margin-top: 24px; align-items: center; }
+  .wiz-btn {
+    background: linear-gradient(135deg, var(--magenta), var(--violet));
+    color: #fff; border: none; border-radius: 8px; padding: 11px 24px;
+    font-family: 'DM Mono', monospace; font-size: 12px; text-transform: uppercase;
+    letter-spacing: .1em; cursor: pointer; transition: opacity .2s;
+  }
+  .wiz-btn:hover { opacity: .88; }
+  .wiz-btn.sec {
+    background: none; border: 1px solid var(--border); color: var(--muted);
+  }
+  .wiz-btn.sec:hover { border-color: var(--violet); color: var(--violet); }
+  .wiz-err { font-family: 'DM Mono', monospace; font-size: 11px; color: var(--red); margin-top: 8px; display: none; }
+
+  /* Airtable setup instructions */
+  .setup-box {
+    background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+    padding: 18px 20px; margin-bottom: 16px;
+  }
+  .setup-box h3 { font-family: 'DM Mono', monospace; font-size: 11px; text-transform: uppercase; letter-spacing: .1em; color: var(--violet); margin-bottom: 12px; }
+  .setup-step { display: flex; gap: 12px; margin-bottom: 10px; align-items: flex-start; font-size: 13px; color: var(--dim); line-height: 1.5; }
+  .setup-num { background: rgba(192,132,252,.15); color: var(--violet); border-radius: 50%; width: 22px; height: 22px; display: flex; align-items: center; justify-content: center; font-family: 'DM Mono', monospace; font-size: 11px; flex-shrink: 0; margin-top: 1px; }
+  .setup-box a { color: var(--teal); text-decoration: none; }
+  .setup-box a:hover { text-decoration: underline; }
+  .field-list { background: rgba(192,132,252,.06); border: 1px solid rgba(192,132,252,.15); border-radius: 8px; padding: 12px 16px; margin-top: 10px; }
+  .field-row { display: flex; justify-content: space-between; align-items: center; padding: 5px 0; border-bottom: 1px solid rgba(192,132,252,.08); font-size: 12px; font-family: 'DM Mono', monospace; }
+  .field-row:last-child { border-bottom: none; }
+  .field-name { color: var(--text); }
+  .field-type { color: var(--muted); font-size: 10px; }
+  .copy-btn {
+    background: rgba(0,229,204,.1); border: 1px solid rgba(0,229,204,.25); color: var(--teal);
+    border-radius: 6px; padding: 4px 10px; font-family: 'DM Mono', monospace; font-size: 10px;
+    cursor: pointer; transition: all .2s; text-decoration: none; display: inline-block;
+  }
+  .copy-btn:hover { background: rgba(0,229,204,.2); }
+
+  /* Settings button */
+  .settings-btn {
+    background: none; border: 1px solid var(--border); border-radius: 8px;
+    color: var(--muted); font-family: 'DM Mono', monospace; font-size: 11px;
+    text-transform: uppercase; letter-spacing: .08em; padding: 7px 14px;
+    cursor: pointer; transition: all .2s;
+  }
+  .settings-btn:hover { border-color: var(--violet); color: var(--violet); }
+
+  /* ── Main app (same as original) ── */
+  header {
+    padding: 24px 32px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 14px;
+    background: rgba(22,21,31,0.7); backdrop-filter: blur(12px);
+    position: sticky; top: 0; z-index: 100;
+  }
+  .hicon {
+    width: 36px; height: 36px;
+    background: linear-gradient(135deg, var(--magenta), var(--violet));
+    border-radius: 10px; display: flex; align-items: center; justify-content: center;
+    font-size: 17px; flex-shrink: 0;
+  }
+  header h1 { font-family: 'DM Serif Display', serif; font-size: 21px; color: var(--violet); }
+  header .sub { font-family: 'DM Mono', monospace; font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .12em; }
+  .header-right { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+
+  .tabs { display: flex; padding: 0 32px; border-bottom: 1px solid var(--border); background: var(--surface); }
+  .tab { padding: 14px 22px; font-family: 'DM Mono', monospace; font-size: 11px; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); cursor: pointer; border: none; background: none; border-bottom: 2px solid transparent; transition: all .2s; }
+  .tab:hover { color: var(--violet); }
+  .tab.active { color: var(--magenta); border-bottom-color: var(--magenta); }
+
+  .panel { display: none; padding: 32px; max-width: 840px; margin: 0 auto; }
+  .panel.active { display: block; }
+
+  .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  .fg { display: flex; flex-direction: column; gap: 7px; }
+  .fg.full { grid-column: 1/-1; }
+  label { font-family: 'DM Mono', monospace; font-size: 10px; text-transform: uppercase; letter-spacing: .12em; color: var(--muted); }
+  input, select, textarea {
+    background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+    color: var(--text); font-family: 'DM Sans', sans-serif; font-size: 14px;
+    padding: 10px 14px; outline: none; width: 100%; transition: border-color .2s, box-shadow .2s;
+    -webkit-appearance: none;
+  }
+  input:focus, select:focus, textarea:focus { border-color: var(--violet); box-shadow: 0 0 0 3px rgba(192,132,252,.12); }
+  select option { background: #1e1c2a; }
+  textarea { resize: vertical; min-height: 90px; }
+  .btn {
+    background: linear-gradient(135deg, var(--magenta), var(--violet));
+    color: #fff; border: none; border-radius: 8px; padding: 12px 28px;
+    font-family: 'DM Mono', monospace; font-size: 12px; text-transform: uppercase;
+    letter-spacing: .1em; cursor: pointer; transition: opacity .2s, transform .15s;
+  }
+  .btn:hover { opacity: .88; transform: translateY(-1px); }
+  .btn:disabled { opacity: .4; cursor: not-allowed; transform: none; }
+  .btn-row { grid-column: 1/-1; display: flex; align-items: center; gap: 16px; margin-top: 6px; }
+  #saveStatus { font-family: 'DM Mono', monospace; font-size: 12px; }
+
+  .pcard { grid-column: 1/-1; background: var(--card); border: 1px solid rgba(192,132,252,.25); border-radius: 10px; padding: 16px; display: none; }
+  .pcard.show { display: block; }
+  .pcard-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+  .pcard-title { font-family: 'DM Mono', monospace; font-size: 10px; text-transform: uppercase; letter-spacing: .12em; color: var(--magenta); }
+  .pcontacts { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 14px; }
+  .cblock { background: rgba(192,132,252,.06); border: 2px solid rgba(192,132,252,.12); border-radius: 8px; padding: 13px 15px; cursor: pointer; transition: border-color .2s, background .2s; }
+  .cblock:hover { border-color: rgba(192,132,252,.35); background: rgba(192,132,252,.1); }
+  .cblock.selected { border-color: var(--magenta); background: rgba(224,64,251,.12); }
+  .crole { font-family: 'DM Mono', monospace; font-size: 9px; text-transform: uppercase; letter-spacing: .14em; color: var(--violet); margin-bottom: 7px; display: flex; align-items: center; gap: 6px; }
+  .ccheck { display: inline-block; width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--muted); flex-shrink: 0; }
+  .cblock.selected .ccheck { background: var(--magenta); border-color: var(--magenta); }
+  .cname { font-size: 14px; font-weight: 600; color: var(--text); margin-bottom: 8px; }
+  .cline { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--dim); margin-bottom: 4px; font-family: 'DM Mono', monospace; }
+  .ci { color: var(--muted); font-size: 11px; width: 14px; flex-shrink: 0; }
+  .pcard-hint { font-family: 'DM Mono', monospace; font-size: 10px; color: var(--muted); font-style: italic; }
+
+  #loadingMsg { font-family: 'DM Mono', monospace; font-size: 13px; color: var(--muted); text-align: center; padding: 48px; }
+  .stats { display: flex; gap: 14px; margin-bottom: 28px; flex-wrap: wrap; }
+  .stat { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 12px 20px; }
+  .stat .n { font-size: 24px; font-weight: 500; }
+  .stat .l { font-family: 'DM Mono', monospace; font-size: 9px; text-transform: uppercase; letter-spacing: .12em; color: var(--muted); margin-top: 2px; }
+
+  .sec-hdr { display: flex; align-items: center; gap: 9px; margin: 28px 0 12px; }
+  .sec-hdr:first-child { margin-top: 0; }
+  .sdot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+  .sdot.r { background: var(--red); box-shadow: 0 0 6px var(--red); }
+  .sdot.a { background: var(--amber); box-shadow: 0 0 6px var(--amber); }
+  .sdot.g { background: var(--teal); box-shadow: 0 0 6px var(--teal); }
+  .sdot.b { background: var(--blue); box-shadow: 0 0 6px var(--blue); }
+  .sec-lbl { font-family: 'DM Mono', monospace; font-size: 10px; text-transform: uppercase; letter-spacing: .12em; color: var(--muted); }
+
+  .srow { display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 12px; padding: 12px 16px; background: var(--card); border: 1px solid var(--border); border-radius: 8px; margin-bottom: 5px; }
+  .srow.ov { border-left: 3px solid var(--red) !important; }
+  .srow.ds { border-left: 3px solid var(--amber) !important; }
+  .srow.ok { border-left: 3px solid var(--teal) !important; }
+  .srow.bl { border-left: 3px solid var(--blue) !important; }
+  .sl { font-family: 'DM Mono', monospace; font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .sd { font-family: 'DM Mono', monospace; font-size: 11px; text-align: right; }
+  .sd .sl2 { color: var(--muted); font-size: 10px; display: block; margin-bottom: 2px; }
+  .sd.ov .val { color: var(--red); }
+  .sd.ds .val { color: var(--amber); }
+  .sd.ok .val { color: var(--teal); }
+  .sd.bl .val { color: var(--blue); }
+  .badge { font-family: 'DM Mono', monospace; font-size: 10px; padding: 3px 9px; border-radius: 20px; white-space: nowrap; }
+  .br { background: rgba(255,107,138,.1); color: var(--red); border: 1px solid rgba(255,107,138,.2); }
+  .ba { background: rgba(245,158,11,.1); color: var(--amber); border: 1px solid rgba(245,158,11,.2); }
+  .bg { background: rgba(0,229,204,.1); color: var(--teal); border: 1px solid rgba(0,229,204,.3); }
+  .bb { background: rgba(96,165,250,.1); color: var(--blue); border: 1px solid rgba(96,165,250,.2); }
+
+  .srow.ov.pending, .srow.ds.pending, .srow.bl.pending { border-left-color: var(--amber) !important; }
+  .pending-flag { font-size: 11px; background: rgba(245,158,11,.15); color: var(--amber); border: 1px solid rgba(245,158,11,.3); border-radius: 4px; padding: 2px 7px; font-family: 'DM Mono', monospace; margin-left: 6px; vertical-align: middle; }
+  .sn-btn { background: none; border: none; color: var(--text); font-size: 14px; font-weight: 500; cursor: pointer; padding: 0; text-align: left; text-decoration: underline; text-decoration-color: rgba(192,132,252,.3); text-underline-offset: 3px; transition: color .2s; }
+  .sn-btn:hover { color: var(--violet); }
+  .divider { height: 1px; background: var(--border); margin: 16px 0; }
+
+  .refresh-btn { background: none; border: 1px solid var(--border); border-radius: 8px; color: var(--muted); font-family: 'DM Mono', monospace; font-size: 11px; text-transform: uppercase; letter-spacing: .08em; padding: 7px 14px; cursor: pointer; transition: all .2s; }
+  .refresh-btn:hover { border-color: var(--violet); color: var(--violet); }
+  .refresh-btn.spinning { opacity: .5; pointer-events: none; }
+
+  .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.6); backdrop-filter: blur(4px); z-index: 200; align-items: center; justify-content: center; padding: 20px; }
+  .modal-overlay.show { display: flex; }
+  .modal { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; width: 100%; max-width: 560px; max-height: 80vh; overflow: hidden; display: flex; flex-direction: column; }
+  .modal-hdr { padding: 20px 24px 16px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
+  .modal-title { font-family: 'DM Serif Display', serif; font-size: 18px; color: var(--violet); }
+  .modal-close { background: none; border: none; color: var(--muted); font-size: 20px; cursor: pointer; padding: 4px 8px; border-radius: 6px; transition: color .2s; }
+  .modal-close:hover { color: var(--text); }
+  .modal-body { padding: 20px 24px; overflow-y: auto; }
+  .modal-loading { font-family: 'DM Mono', monospace; font-size: 12px; color: var(--muted); text-align: center; padding: 32px; }
+  .hentry { padding: 12px 0; border-bottom: 1px solid var(--border); display: grid; grid-template-columns: 80px 1fr auto; gap: 12px; align-items: start; }
+  .hentry:last-child { border-bottom: none; }
+  .hdate { font-family: 'DM Mono', monospace; font-size: 11px; color: var(--violet); padding-top: 2px; }
+  .hmethod { font-family: 'DM Mono', monospace; font-size: 10px; color: var(--muted); background: rgba(192,132,252,.1); border-radius: 4px; padding: 2px 7px; white-space: nowrap; align-self: start; }
+  .hnotes { font-size: 13px; color: var(--dim); line-height: 1.5; }
+
+  /* ── Scheduler tab ── */
+  .sched-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  .sched-section { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 20px; }
+  .sched-section h3 { font-family: 'DM Mono', monospace; font-size: 10px; text-transform: uppercase; letter-spacing: .12em; color: var(--violet); margin-bottom: 16px; }
+  .sched-section.full { grid-column: 1/-1; }
+  .slot-builder { display: flex; gap: 10px; align-items: flex-end; margin-bottom: 14px; flex-wrap: wrap; }
+  .slot-builder .fg { flex: 1; min-width: 120px; }
+  .add-slot-btn { background: rgba(192,132,252,.15); border: 1px solid rgba(192,132,252,.3); color: var(--violet); border-radius: 8px; padding: 10px 18px; font-family: 'DM Mono', monospace; font-size: 11px; cursor: pointer; white-space: nowrap; transition: all .2s; }
+  .add-slot-btn:hover { background: rgba(192,132,252,.25); }
+  .slots-list { display: flex; flex-direction: column; gap: 8px; }
+  .slot-item { display: flex; align-items: center; justify-content: space-between; background: rgba(192,132,252,.06); border: 1px solid rgba(192,132,252,.12); border-radius: 8px; padding: 10px 14px; font-family: 'DM Mono', monospace; font-size: 12px; color: var(--dim); }
+  .slot-item.booked { border-color: rgba(52,211,153,.2); background: rgba(52,211,153,.05); }
+  .slot-item.booked .slot-info { color: var(--green); }
+  .slot-remove { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 14px; padding: 2px 6px; border-radius: 4px; transition: color .2s; }
+  .slot-remove:hover { color: var(--red); }
+  .slot-booked-by { font-size: 11px; color: var(--green); margin-top: 2px; }
+  .parent-link-row { display: flex; align-items: center; justify-content: space-between; background: rgba(192,132,252,.06); border: 1px solid rgba(192,132,252,.12); border-radius: 8px; padding: 12px 14px; margin-bottom: 8px; }
+  .parent-link-name { font-size: 14px; font-weight: 500; color: var(--text); }
+  .parent-link-url { font-family: 'DM Mono', monospace; font-size: 10px; color: var(--muted); margin-top: 3px; }
+  .copy-link-btn { background: rgba(0,229,204,.1); border: 1px solid rgba(0,229,204,.25); color: var(--teal); border-radius: 6px; padding: 6px 12px; font-family: 'DM Mono', monospace; font-size: 10px; cursor: pointer; transition: all .2s; white-space: nowrap; }
+  .copy-link-btn:hover { background: rgba(0,229,204,.2); }
+  .copy-link-btn.copied { background: rgba(52,211,153,.15); border-color: rgba(52,211,153,.3); color: var(--green); }
+  .parent-sel-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 8px; margin-bottom: 16px; }
+  .parent-chip { background: rgba(192,132,252,.06); border: 2px solid rgba(192,132,252,.12); border-radius: 8px; padding: 10px 14px; cursor: pointer; transition: all .2s; font-size: 13px; color: var(--dim); }
+  .parent-chip:hover { border-color: rgba(192,132,252,.35); }
+  .parent-chip.selected { border-color: var(--magenta); background: rgba(224,64,251,.1); color: var(--text); }
+  /* ── Booking page (parent view) ── */
+  .booking-wrap { max-width: 520px; margin: 0 auto; padding: 40px 24px; }
+  .booking-card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 28px; }
+  .booking-title { font-family: 'DM Serif Display', serif; font-size: 22px; color: var(--violet); margin-bottom: 6px; }
+  .booking-sub { font-size: 14px; color: var(--dim); margin-bottom: 24px; line-height: 1.5; }
+  .booking-slots { display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px; }
+  .booking-slot { background: rgba(192,132,252,.06); border: 2px solid rgba(192,132,252,.15); border-radius: 10px; padding: 14px 18px; cursor: pointer; transition: all .2s; display: flex; align-items: center; justify-content: space-between; }
+  .booking-slot:hover { border-color: var(--violet); background: rgba(192,132,252,.1); }
+  .booking-slot.selected { border-color: var(--magenta); background: rgba(224,64,251,.1); }
+  .booking-slot.taken { opacity: .4; cursor: not-allowed; pointer-events: none; }
+  .slot-dt { font-family: 'DM Mono', monospace; font-size: 13px; color: var(--text); }
+  .slot-taken-lbl { font-family: 'DM Mono', monospace; font-size: 10px; color: var(--muted); }
+  .booking-name-row { margin-bottom: 16px; }
+  .booking-name-row label { display: block; font-family: 'DM Mono', monospace; font-size: 10px; text-transform: uppercase; letter-spacing: .12em; color: var(--muted); margin-bottom: 7px; }
+  .booking-confirm { width: 100%; }
+  .booking-success { text-align: center; padding: 32px 0; }
+  .booking-success .check { font-size: 48px; margin-bottom: 16px; }
+  .booking-success h2 { font-family: 'DM Serif Display', serif; font-size: 22px; color: var(--green); margin-bottom: 10px; }
+  .booking-success p { font-size: 14px; color: var(--dim); line-height: 1.6; }
+  @media (max-width: 600px) { .sched-grid { grid-template-columns: 1fr; } }
+    .pcontacts { grid-template-columns: 1fr; }
+    .form-grid { grid-template-columns: 1fr; }
+    .fg.full { grid-column: 1; }
+    .btn-row { grid-column: 1; }
+    .pcard { grid-column: 1; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ══════════════════════════════════════════════════════
+     SETUP WIZARD
+══════════════════════════════════════════════════════ -->
+<div id="wizardOverlay" class="show">
+  <div class="wizard">
+    <div class="wiz-hdr">
+      <div class="wiz-step-indicator">
+        <div class="wiz-pip active" id="pip0"></div>
+        <div class="wiz-pip" id="pip1"></div>
+        <div class="wiz-pip" id="pip2"></div>
+        <div class="wiz-pip" id="pip3"></div>
+      </div>
+      <div class="wiz-icon" id="wizIcon">📋</div>
+      <div class="wiz-title" id="wizTitle">Parent Communication Tracker</div>
+      <div class="wiz-sub" id="wizSub">Let's get you set up. This takes about 5 minutes and you only have to do it once.</div>
+    </div>
+    <div class="wiz-body">
+
+      <!-- Step 0: Welcome -->
+      <div class="wiz-step active" id="wiz-step-0">
+        <div class="setup-box">
+          <h3>What you'll need</h3>
+          <div class="setup-step"><div class="setup-num">1</div><div>A free <a href="https://airtable.com/signup" target="_blank">Airtable account</a> — this is where your data lives</div></div>
+          <div class="setup-step"><div class="setup-num">2</div><div>Your Airtable API token (we'll walk you through getting it)</div></div>
+          <div class="setup-step"><div class="setup-num">3</div><div>About 5 minutes to set up your tables</div></div>
+        </div>
+        <div class="setup-box">
+          <h3>How it works</h3>
+          <div class="setup-step"><div class="setup-num">✦</div><div>Your data stays in <strong>your</strong> Airtable — this app never stores anything itself</div></div>
+          <div class="setup-step"><div class="setup-num">✦</div><div>Add students directly in Airtable — they appear in the app automatically</div></div>
+          <div class="setup-step"><div class="setup-num">✦</div><div>Works on phone or desktop, hosted for free on Netlify</div></div>
+        </div>
+        <div class="setup-box" style="text-align:center;padding:24px 20px">
+          <h3 style="margin-bottom:14px">Host it in one click</h3>
+          <p style="font-size:13px;color:var(--dim);margin-bottom:18px;line-height:1.6">Click below to deploy your own copy instantly — Netlify will ask you to create a free account (just email + password, no credit card).</p>
+          <a href="https://app.netlify.com/start/deploy?repository=https://github.com/amclockwood-bit/parentcommtemplate" target="_blank" style="display:inline-block;margin-bottom:14px">
+            <img src="https://www.netlify.com/img/deploy/button.svg" alt="Deploy to Netlify" style="height:40px">
+          </a>
+          <p style="font-size:11px;color:var(--muted);line-height:1.6">After deploying, come back to this page and click <strong style="color:var(--violet)">Let's go</strong> to finish setup.</p>
+        </div>
+        <div class="wiz-btns">
+          <button class="wiz-btn" onclick="wizNext()">Let's go →</button>
+          <button class="wiz-btn sec" onclick="wizLoad()">I already have a setup</button>
+        </div>
+      </div>
+
+      <!-- Step 1: Your info -->
+      <div class="wiz-step" id="wiz-step-1">
+        <div class="wiz-field">
+          <label>Your name (shows in the header)</label>
+          <input type="text" id="wiz-name" placeholder="e.g. Ms. Johnson">
+        </div>
+        <div class="wiz-field">
+          <label>Grade(s) you teach</label>
+          <input type="text" id="wiz-grade" placeholder="e.g. 8th Grade, or 7th &amp; 8th">
+        </div>
+        <div class="wiz-field">
+          <label>School year</label>
+          <input type="text" id="wiz-year" placeholder="e.g. 2025–2026">
+          <div class="hint">You can update this each year in Settings without losing your data.</div>
+        </div>
+        <div class="wiz-field">
+          <label>Color theme</label>
+          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:4px" id="themeGrid">
+            <div class="theme-chip selected" data-theme="purple" onclick="pickTheme(this,'#e040fb','#c084fc')" style="--tc:#e040fb">
+              <div class="theme-swatch" style="background:linear-gradient(135deg,#e040fb,#c084fc)"></div>
+              <div class="theme-name">Purple</div>
+            </div>
+            <div class="theme-chip" data-theme="blue" onclick="pickTheme(this,'#3b82f6','#60a5fa')" style="--tc:#3b82f6">
+              <div class="theme-swatch" style="background:linear-gradient(135deg,#3b82f6,#60a5fa)"></div>
+              <div class="theme-name">Blue</div>
+            </div>
+            <div class="theme-chip" data-theme="rose" onclick="pickTheme(this,'#f43f5e','#fb7185')" style="--tc:#f43f5e">
+              <div class="theme-swatch" style="background:linear-gradient(135deg,#f43f5e,#fb7185)"></div>
+              <div class="theme-name">Rose</div>
+            </div>
+            <div class="theme-chip" data-theme="teal" onclick="pickTheme(this,'#0d9488','#2dd4bf')" style="--tc:#0d9488">
+              <div class="theme-swatch" style="background:linear-gradient(135deg,#0d9488,#2dd4bf)"></div>
+              <div class="theme-name">Teal</div>
+            </div>
+            <div class="theme-chip" data-theme="orange" onclick="pickTheme(this,'#ea580c','#fb923c')" style="--tc:#ea580c">
+              <div class="theme-swatch" style="background:linear-gradient(135deg,#ea580c,#fb923c)"></div>
+              <div class="theme-name">Orange</div>
+            </div>
+            <div class="theme-chip" data-theme="green" onclick="pickTheme(this,'#16a34a','#4ade80')" style="--tc:#16a34a">
+              <div class="theme-swatch" style="background:linear-gradient(135deg,#16a34a,#4ade80)"></div>
+              <div class="theme-name">Green</div>
+            </div>
+            <div class="theme-chip" data-theme="indigo" onclick="pickTheme(this,'#6366f1','#a5b4fc')" style="--tc:#6366f1">
+              <div class="theme-swatch" style="background:linear-gradient(135deg,#6366f1,#a5b4fc)"></div>
+              <div class="theme-name">Indigo</div>
+            </div>
+            <div class="theme-chip" data-theme="pink" onclick="pickTheme(this,'#db2777','#f472b6')" style="--tc:#db2777">
+              <div class="theme-swatch" style="background:linear-gradient(135deg,#db2777,#f472b6)"></div>
+              <div class="theme-name">Pink</div>
+            </div>
+          </div>
+        </div>
+        <div class="wiz-err" id="wiz-err-1">Please fill in all fields above.</div>
+        <div class="wiz-btns">
+          <button class="wiz-btn" onclick="wizNext()">Next →</button>
+          <button class="wiz-btn sec" onclick="wizBack()">← Back</button>
+        </div>
+      </div>
+
+      <!-- Step 2: Airtable setup -->
+      <div class="wiz-step" id="wiz-step-2">
+        <div class="setup-box">
+          <h3>Step 1 — Create your Airtable base</h3>
+          <div class="setup-step"><div class="setup-num">1</div><div>Go to <a href="https://airtable.com" target="_blank">airtable.com</a> and sign in</div></div>
+          <div class="setup-step"><div class="setup-num">2</div><div>Click <strong>+ Create</strong> → <strong>Start from scratch</strong> → name it <strong>Parent Comms</strong></div></div>
+          <div class="setup-step"><div class="setup-num">3</div><div>Rename the default table to <strong>Students</strong> and add these fields:</div></div>
+          <div class="field-list">
+            <div class="field-row"><span class="field-name">Name</span><span class="field-type">Single line text</span></div>
+            <div class="field-row"><span class="field-name">Mom Name</span><span class="field-type">Single line text</span></div>
+            <div class="field-row"><span class="field-name">Mom Email</span><span class="field-type">Email</span></div>
+            <div class="field-row"><span class="field-name">Mom Phone</span><span class="field-type">Phone number</span></div>
+            <div class="field-row"><span class="field-name">Dad Name</span><span class="field-type">Single line text</span></div>
+            <div class="field-row"><span class="field-name">Dad Email</span><span class="field-type">Email</span></div>
+            <div class="field-row"><span class="field-name">Dad Phone</span><span class="field-type">Phone number</span></div>
+          </div>
+        </div>
+        <div class="setup-box">
+          <h3>Step 2 — Create the Communication Logs table</h3>
+          <div class="setup-step"><div class="setup-num">1</div><div>Click <strong>+ Add table</strong> and name it <strong>Communication Logs</strong></div></div>
+          <div class="setup-step"><div class="setup-num">2</div><div>Add these fields:</div></div>
+          <div class="field-list">
+            <div class="field-row"><span class="field-name">Student Name</span><span class="field-type">Single line text</span></div>
+            <div class="field-row"><span class="field-name">Log Date</span><span class="field-type">Date</span></div>
+            <div class="field-row"><span class="field-name">Method</span><span class="field-type">Single select *</span></div>
+            <div class="field-row"><span class="field-name">Notes</span><span class="field-type">Long text</span></div>
+            <div class="field-row"><span class="field-name">Next Contact</span><span class="field-type">Date</span></div>
+          </div>
+          <div style="font-size:12px;color:var(--muted);margin-top:10px;line-height:1.6">* For <strong>Method</strong>, add these options to the single select field:<br>Phone Call · Email · Voicemail Left · PPT Email · PPT Meeting · No Response · Parent Reached Out · Other</div>
+        </div>
+        <div class="wiz-btns">
+          <button class="wiz-btn" onclick="wizNext()">I've created both tables →</button>
+          <button class="wiz-btn sec" onclick="wizBack()">← Back</button>
+        </div>
+      </div>
+
+      <!-- Step 3: API credentials -->
+      <div class="wiz-step" id="wiz-step-3">
+        <div class="setup-box">
+          <h3>Get your Airtable API token</h3>
+          <div class="setup-step"><div class="setup-num">1</div><div>Go to <a href="https://airtable.com/create/tokens" target="_blank">airtable.com/create/tokens</a></div></div>
+          <div class="setup-step"><div class="setup-num">2</div><div>Click <strong>Create new token</strong></div></div>
+          <div class="setup-step"><div class="setup-num">3</div><div>Give it a name (e.g. "Parent Comms"), set scope to <strong>data.records:read</strong> and <strong>data.records:write</strong>, and add your <strong>Parent Comms</strong> base</div></div>
+          <div class="setup-step"><div class="setup-num">4</div><div>Copy the token and paste it below — it starts with <code style="font-family:DM Mono,monospace;font-size:11px;color:var(--teal)">pat</code></div></div>
+        </div>
+        <div class="wiz-field">
+          <label>Airtable API Token</label>
+          <input type="password" id="wiz-token" placeholder="pat...">
+        </div>
+        <div class="setup-box" style="margin-top:16px">
+          <h3>Get your Base ID</h3>
+          <div class="setup-step"><div class="setup-num">1</div><div>Open your <strong>Parent Comms</strong> base in Airtable</div></div>
+          <div class="setup-step"><div class="setup-num">2</div><div>Look at the URL — it looks like <code style="font-family:DM Mono,monospace;font-size:11px;color:var(--teal)">airtable.com/appXXXXXXXXXX/...</code></div></div>
+          <div class="setup-step"><div class="setup-num">3</div><div>Copy the part that starts with <strong>app</strong> and paste it below</div></div>
+        </div>
+        <div class="wiz-field">
+          <label>Airtable Base ID</label>
+          <input type="text" id="wiz-base" placeholder="appXXXXXXXXXX">
+        </div>
+        <div class="wiz-err" id="wiz-err-3">Please enter both your API token and Base ID.</div>
+        <div class="wiz-btns">
+          <button class="wiz-btn" id="wiz-finish-btn" onclick="wizFinish()">Finish Setup →</button>
+          <button class="wiz-btn sec" onclick="wizBack()">← Back</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════
+     SETTINGS MODAL
+══════════════════════════════════════════════════════ -->
+<div class="modal-overlay" id="settingsModal" onclick="closeSettings(event)">
+  <div class="modal" style="max-width:480px">
+    <div class="modal-hdr">
+      <div class="modal-title">⚙ Settings</div>
+      <button class="modal-close" onclick="document.getElementById('settingsModal').classList.remove('show')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div style="display:flex;flex-direction:column;gap:16px">
+        <div class="wiz-field">
+          <label>Your name</label>
+          <input type="text" id="set-name">
+        </div>
+        <div class="wiz-field">
+          <label>Grade(s)</label>
+          <input type="text" id="set-grade">
+        </div>
+        <div class="wiz-field">
+          <label>School year</label>
+          <input type="text" id="set-year">
+        </div>
+        <div class="wiz-field">
+          <label>Airtable API Token</label>
+          <input type="password" id="set-token">
+        </div>
+        <div class="wiz-field">
+          <label>Airtable Base ID</label>
+          <input type="text" id="set-base">
+        </div>
+        <div style="display:flex;gap:10px;margin-top:4px">
+          <button class="wiz-btn" onclick="saveSettings()">Save Changes</button>
+          <button class="wiz-btn sec" onclick="clearSetup()" style="color:var(--red);border-color:rgba(255,107,138,.3)">Reset & Re-run Wizard</button>
+        </div>
+        <div id="set-status" style="font-family:'DM Mono',monospace;font-size:11px;"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════
+     HISTORY MODAL
+══════════════════════════════════════════════════════ -->
+<div class="modal-overlay" id="historyModal" onclick="closeHistory(event)">
+  <div class="modal">
+    <div class="modal-hdr">
+      <div class="modal-title" id="historyTitle">Contact History</div>
+      <button class="modal-close" onclick="document.getElementById('historyModal').classList.remove('show')">✕</button>
+    </div>
+    <div class="modal-body" id="historyBody">
+      <div class="modal-loading">Loading...</div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════
+     MAIN APP
+══════════════════════════════════════════════════════ -->
+<header>
+  <div class="hicon">📋</div>
+  <div>
+    <h1>Parent Communication Tracker</h1>
+    <span class="sub" id="headerSub">Loading...</span>
+  </div>
+  <div class="header-right">
+    <button class="settings-btn" onclick="openSettings()">⚙ Settings</button>
+    <button class="refresh-btn" id="refreshBtn" onclick="refreshAll()">↻ Refresh</button>
+  </div>
+</header>
+
+<div class="tabs">
+  <button class="tab active" onclick="showTab('log',this)">Log Contact</button>
+  <button class="tab" onclick="showTab('upcoming',this)">Upcoming Contacts</button>
+  <button class="tab" onclick="showTab('schedule',this)">📅 Schedule Calls</button>
+</div>
+
+<!-- LOG TAB -->
+<div class="panel active" id="tab-log">
+  <div class="form-grid">
+    <div class="fg">
+      <label>Student</label>
+      <select id="studentSel" onchange="onStudent()">
+        <option value="">— Loading students… —</option>
+      </select>
+    </div>
+    <div class="fg">
+      <label>Method</label>
+      <select id="methodSel">
+        <option value="">— Select method —</option>
+        <option value="Phone">Phone Call</option>
+        <option value="Email">Email</option>
+        <option value="Voicemail">Voicemail Left</option>
+        <option value="PPT Email">PPT Email</option>
+        <option value="PPT">PPT Meeting</option>
+        <option value="No Response">No Response</option>
+        <option value="Parent Reached Out">Parent Reached Out — Pending Reply</option>
+        <option value="Other">Other</option>
+      </select>
+    </div>
+    <div class="pcard" id="pcard">
+      <div class="pcard-header">
+        <div class="pcard-title">📞 Parent Contact Info — Click to select who you spoke with</div>
+      </div>
+      <div class="pcontacts" id="pcontacts"></div>
+      <div id="pcardHint" class="pcard-hint">Click a contact card above to log who you spoke with</div>
+    </div>
+    <div class="fg">
+      <label>Log Date</label>
+      <input type="date" id="logDate" onchange="onLogDateChange()">
+    </div>
+    <div class="fg">
+      <label>Next Contact Date</label>
+      <input type="date" id="nextDate">
+    </div>
+    <div class="fg full">
+      <label>Notes</label>
+      <textarea id="notes" placeholder="What was discussed, outcome, follow-up needed..."></textarea>
+    </div>
+    <div class="btn-row">
+      <button class="btn" id="saveBtn" onclick="save()">Save Log Entry</button>
+      <span id="saveStatus"></span>
+    </div>
+  </div>
+</div>
+
+<!-- UPCOMING TAB -->
+<div class="panel" id="tab-upcoming">
+  <div id="loadingMsg">Loading contact schedule...</div>
+  <div id="upcomingContent" style="display:none">
+    <div class="stats" id="stats"></div>
+    <div id="thisWeekEl"></div>
+    <div id="nextWeekEl"></div>
+    <div id="thisMonthEl"></div>
+    <div id="overdueEl"></div>
+  </div>
+</div>
+
+<!-- SCHEDULE TAB -->
+<div class="panel" id="tab-schedule">
+  <div class="sched-grid">
+    <div class="sched-section">
+      <h3>📅 This Week's Call Slots</h3>
+      <div class="slot-builder">
+        <div class="fg"><label>Date</label><input type="date" id="slotDate"></div>
+        <div class="fg"><label>Time</label><input type="time" id="slotTime" value="15:30"></div>
+        <button class="add-slot-btn" id="addSlotBtn" onclick="addSlot()">+ Add Slot</button>
+      </div>
+      <div class="slots-list" id="slotsList">
+        <div style="font-family:'DM Mono',monospace;font-size:12px;color:var(--muted);text-align:center;padding:16px">No slots added yet</div>
+      </div>
+    </div>
+    <div class="sched-section">
+      <h3>🔗 Generate Parent Links</h3>
+      <p style="font-size:13px;color:var(--dim);margin-bottom:14px;line-height:1.5">Select parents then generate unique one-time booking links. Each parent can only book one slot.</p>
+      <div class="parent-sel-grid" id="parentSelGrid">
+        <div style="font-family:'DM Mono',monospace;font-size:12px;color:var(--muted)">Loading students...</div>
+      </div>
+      <button class="btn" onclick="generateLinks()" style="width:100%;margin-bottom:16px">Generate Links</button>
+      <div id="linksOutput"></div>
+    </div>
+    <div class="sched-section full">
+      <h3>✅ Bookings This Week</h3>
+      <div id="bookingsSummary" style="font-family:'DM Mono',monospace;font-size:12px;color:var(--muted)">No bookings yet.</div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── Config (loaded from localStorage) ───────────────────────────────────────
+const SETTINGS_KEY = 'pct_settings';
+const F = {
+  name:   'Student Name',
+  date:   'Log Date',
+  method: 'Method',
+  notes:  'Notes',
+  next:   'Next Contact'
+};
+
+function getSettings() {
+  try { return JSON.parse(localStorage.getItem(SETTINGS_KEY)) || null; }
+  catch { return null; }
+}
+function saveSettingsData(obj) {
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify(obj));
+}
+
+// ── Wizard logic ─────────────────────────────────────────────────────────────
+let wizStep = 0;
+const WIZ_STEPS = 4;
+
+const wizHeaders = [
+  { icon:'📋', title:'Parent Communication Tracker', sub:'Let\'s get you set up. This takes about 5 minutes and you only have to do it once.' },
+  { icon:'👋', title:'Tell us about yourself', sub:'This personalizes the header so you know whose tracker this is.' },
+  { icon:'🗂', title:'Set up Airtable', sub:'Airtable is the free database where all your contact logs live. Follow the steps below.' },
+  { icon:'🔑', title:'Connect to Airtable', sub:'These credentials let the app read and write your data. They\'re stored only in your browser.' },
+];
+
+function updateWizHeader() {
+  const h = wizHeaders[wizStep];
+  document.getElementById('wizIcon').textContent = h.icon;
+  document.getElementById('wizTitle').textContent = h.title;
+  document.getElementById('wizSub').textContent = h.sub;
+  for (let i = 0; i < WIZ_STEPS; i++) {
+    const pip = document.getElementById('pip'+i);
+    pip.className = 'wiz-pip' + (i < wizStep ? ' done' : i === wizStep ? ' active' : '');
+  }
+}
+
+function wizNext() {
+  if (wizStep === 1) {
+    const name = document.getElementById('wiz-name').value.trim();
+    const grade = document.getElementById('wiz-grade').value.trim();
+    const year = document.getElementById('wiz-year').value.trim();
+    if (!name || !grade || !year) {
+      document.getElementById('wiz-err-1').style.display = 'block'; return;
+    }
+    document.getElementById('wiz-err-1').style.display = 'none';
+  }
+  document.getElementById('wiz-step-'+wizStep).classList.remove('active');
+  wizStep++;
+  document.getElementById('wiz-step-'+wizStep).classList.add('active');
+  updateWizHeader();
+}
+
+function wizBack() {
+  document.getElementById('wiz-step-'+wizStep).classList.remove('active');
+  wizStep--;
+  document.getElementById('wiz-step-'+wizStep).classList.add('active');
+  updateWizHeader();
+}
+
+async function wizFinish() {
+  const token = document.getElementById('wiz-token').value.trim();
+  const base  = document.getElementById('wiz-base').value.trim();
+  const err   = document.getElementById('wiz-err-3');
+  if (!token || !base) { err.style.display = 'block'; return; }
+  err.style.display = 'none';
+
+  const btn = document.getElementById('wiz-finish-btn');
+  btn.textContent = 'Checking connection...'; btn.disabled = true;
+
+  // Quick test: try to fetch the Students table
+  try {
+    const res = await fetch(`https://api.airtable.com/v0/${base}/Students?pageSize=1`, {
+      headers: { 'Authorization': 'Bearer ' + token }
+    });
+    if (!res.ok) throw new Error('Status ' + res.status);
+  } catch(e) {
+    btn.textContent = 'Finish Setup →'; btn.disabled = false;
+    err.textContent = '✗ Could not connect. Check your token and base ID and try again.';
+    err.style.display = 'block'; return;
+  }
+
+  const cfg = {
+    name:  document.getElementById('wiz-name').value.trim(),
+    grade: document.getElementById('wiz-grade').value.trim(),
+    year:  document.getElementById('wiz-year').value.trim(),
+    magenta: selectedTheme.magenta,
+    violet:  selectedTheme.violet,
+    token, base
+  };
+  saveSettingsData(cfg);
+  applySettings(cfg);
+  document.getElementById('wizardOverlay').classList.remove('show');
+  await loadStudents();
+  loadUpcoming();
+}
+
+function wizLoad() {
+  const cfg = getSettings();
+  if (!cfg) { alert('No saved setup found. Please complete the wizard.'); return; }
+  applySettings(cfg);
+  document.getElementById('wizardOverlay').classList.remove('show');
+  loadStudents();
+  loadUpcoming();
+}
+
+// ── Settings modal ───────────────────────────────────────────────────────────
+function openSettings() {
+  const cfg = getSettings() || {};
+  document.getElementById('set-name').value  = cfg.name  || '';
+  document.getElementById('set-grade').value = cfg.grade || '';
+  document.getElementById('set-year').value  = cfg.year  || '';
+  document.getElementById('set-token').value = cfg.token || '';
+  document.getElementById('set-base').value  = cfg.base  || '';
+  document.getElementById('set-status').textContent = '';
+  document.getElementById('settingsModal').classList.add('show');
+}
+
+function closeSettings(e) {
+  if (e.target === document.getElementById('settingsModal'))
+    document.getElementById('settingsModal').classList.remove('show');
+}
+
+async function saveSettings() {
+  const cfg = {
+    name:  document.getElementById('set-name').value.trim(),
+    grade: document.getElementById('set-grade').value.trim(),
+    year:  document.getElementById('set-year').value.trim(),
+    token: document.getElementById('set-token').value.trim(),
+    base:  document.getElementById('set-base').value.trim(),
+  };
+  const st = document.getElementById('set-status');
+  st.textContent = 'Saving...'; st.style.color = 'var(--muted)';
+  saveSettingsData(cfg);
+  applySettings(cfg);
+  st.textContent = '✓ Saved!'; st.style.color = 'var(--green)';
+  setTimeout(() => {
+    document.getElementById('settingsModal').classList.remove('show');
+    loadStudents();
+    loadUpcoming();
+  }, 900);
+}
+
+function clearSetup() {
+  if (!confirm('This will clear all your settings and re-run the setup wizard. Your Airtable data is not affected.')) return;
+  localStorage.removeItem(SETTINGS_KEY);
+  location.reload();
+}
+
+// ── Theme picker ─────────────────────────────────────────────────────────────
+let selectedTheme = { magenta: '#e040fb', violet: '#c084fc' };
+
+function pickTheme(el, magenta, violet) {
+  document.querySelectorAll('.theme-chip').forEach(c=>c.classList.remove('selected'));
+  el.classList.add('selected');
+  selectedTheme = { magenta, violet };
+  // Live preview
+  document.documentElement.style.setProperty('--magenta', magenta);
+  document.documentElement.style.setProperty('--violet', violet);
+}
+
+function applyTheme(magenta, violet) {
+  if (!magenta) return;
+  document.documentElement.style.setProperty('--magenta', magenta);
+  document.documentElement.style.setProperty('--violet', violet);
+}
+
+function applySettings(cfg) {
+  document.getElementById('headerSub').textContent =
+    [cfg.name, cfg.grade, cfg.year].filter(Boolean).join(' · ');
+  if (cfg.magenta) applyTheme(cfg.magenta, cfg.violet);
+}
+
+// ── Airtable helpers ─────────────────────────────────────────────────────────
+function getCfg() { return getSettings() || {}; }
+
+const PARENTS = {};
+
+async function loadStudents() {
+  const { token, base } = getCfg();
+  if (!token || !base) return;
+  const sel = document.getElementById('studentSel');
+  try {
+    let records = [], offset = null;
+    do {
+      const url = new URL(`https://api.airtable.com/v0/${base}/Students`);
+      url.searchParams.set('pageSize', '100');
+      if (offset) url.searchParams.set('offset', offset);
+      const res = await fetch(url.toString(), { headers: { 'Authorization': 'Bearer ' + token } });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const data = await res.json();
+      records = records.concat(data.records || []);
+      offset = data.offset || null;
+    } while (offset);
+
+    records.sort((a, b) => (a.fields['Name']||'').localeCompare(b.fields['Name']||''));
+    Object.keys(PARENTS).forEach(k => delete PARENTS[k]);
+    sel.innerHTML = '<option value="">— Select student —</option>';
+    for (const r of records) {
+      const name = r.fields['Name'];
+      if (!name) continue;
+      const f = r.fields;
+      PARENTS[name] = {
+        mom: (f['Mom Name']||f['Mom Email']||f['Mom Phone']) ? { name:f['Mom Name']||'', email:f['Mom Email']||'', phone:f['Mom Phone']||'' } : null,
+        dad: (f['Dad Name']||f['Dad Email']||f['Dad Phone']) ? { name:f['Dad Name']||'', email:f['Dad Email']||'', phone:f['Dad Phone']||'' } : null,
+      };
+      const opt = document.createElement('option');
+      opt.value = name; opt.textContent = name;
+      sel.appendChild(opt);
+    }
+  } catch(e) {
+    sel.innerHTML = '<option value="">— Error loading students —</option>';
+  }
+}
+
+let selectedContacts = new Set();
+
+const today = new Date().toISOString().split('T')[0];
+document.addEventListener('DOMContentLoaded', async () => {
+  const isBooking = await initBookingPage();
+  if (isBooking) return;
+
+  document.getElementById('logDate').value = today;
+  const n = new Date(); n.setDate(n.getDate()+14);
+  document.getElementById('nextDate').value = n.toISOString().split('T')[0];
+
+  const cfg = getSettings();
+  if (cfg?.token && cfg?.base) {
+    applySettings(cfg);
+    document.getElementById('wizardOverlay').classList.remove('show');
+    await loadStudents();
+    buildParentSelGrid();
+    loadUpcoming();
+  }
+});
+
+function onLogDateChange() {
+  const logDate = document.getElementById('logDate').value;
+  if (!logDate) return;
+  const d = new Date(logDate + 'T00:00:00');
+  d.setDate(d.getDate() + 14);
+  document.getElementById('nextDate').value = d.toISOString().split('T')[0];
+}
+
+function showTab(id, el) {
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
+  if (id === 'schedule') { buildParentSelGrid(); loadSlots(); loadBookingsSummary(); }
+  el.classList.add('active');
+  document.getElementById('tab-'+id).classList.add('active');
+  if (id === 'upcoming') loadUpcoming();
+}
+
+function selectContact(role) {
+  if (selectedContacts.has(role)) selectedContacts.delete(role);
+  else selectedContacts.add(role);
+  document.querySelectorAll('.cblock').forEach(b => b.classList.toggle('selected', selectedContacts.has(b.dataset.role)));
+  const p = PARENTS[document.getElementById('studentSel').value];
+  if (!p) return;
+  if (selectedContacts.size === 0) {
+    document.getElementById('pcardHint').textContent = 'Click a contact card above to log who you spoke with';
+    document.getElementById('pcardHint').style.color = 'var(--muted)';
+  } else {
+    const names = [...selectedContacts].map(r => (r==='mom' ? p.mom : p.dad)?.name || r).join(' & ');
+    document.getElementById('pcardHint').textContent = `✓ Logging contact with: ${names}`;
+    document.getElementById('pcardHint').style.color = 'var(--violet)';
+  }
+}
+
+function onStudent() {
+  const s = document.getElementById('studentSel').value;
+  const card = document.getElementById('pcard');
+  const contacts = document.getElementById('pcontacts');
+  selectedContacts = new Set();
+  document.getElementById('pcardHint').textContent = 'Click a contact card above to log who you spoke with';
+  document.getElementById('pcardHint').style.color = 'var(--muted)';
+  if (!s || !PARENTS[s]) { card.classList.remove('show'); return; }
+  const p = PARENTS[s];
+  function block(role, info) {
+    if (!info || !info.name) return '';
+    return `<div class="cblock" data-role="${role}" onclick="selectContact('${role}')">
+      <div class="crole"><span class="ccheck"></span>${role==='mom'?'Mother':'Father'}</div>
+      <div class="cname">${info.name}</div>
+      ${info.email ? `<div class="cline"><span class="ci">✉</span><span>${info.email}</span></div>` : ''}
+      ${info.phone ? `<div class="cline"><span class="ci">☎</span><span>${info.phone}</span></div>` : ''}
+    </div>`;
+  }
+  const html = block('mom', p.mom) + block('dad', p.dad);
+  if (html) { contacts.innerHTML = html; card.classList.add('show'); }
+  else card.classList.remove('show');
+}
+
+async function save() {
+  const { token, base } = getCfg();
+  const student  = document.getElementById('studentSel').value;
+  const method   = document.getElementById('methodSel').value;
+  const logDate  = document.getElementById('logDate').value;
+  const nextDate = document.getElementById('nextDate').value;
+  const notes    = document.getElementById('notes').value;
+  if (!student) { alert('Select a student.'); return; }
+  if (!method)  { alert('Select a method.'); return; }
+  if (!token)   { alert('Please complete setup first.'); return; }
+
+  const btn = document.getElementById('saveBtn');
+  const st  = document.getElementById('saveStatus');
+  btn.disabled = true; st.textContent = 'Saving...'; st.style.color = 'var(--muted)';
+
+  try {
+    const res = await fetch(`https://api.airtable.com/v0/${base}/Communication Logs`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer '+token },
+      body: JSON.stringify({ records: [{ fields: {
+        [F.name]:   student,
+        [F.date]:   logDate,
+        [F.method]: [method],
+        [F.notes]:  notes,
+        [F.next]:   nextDate
+      }}]})
+    });
+    if (res.ok) {
+      st.textContent = '✓ Saved!'; st.style.color = 'var(--green)';
+      document.getElementById('notes').value = '';
+      selectedContacts = new Set();
+      document.querySelectorAll('.cblock').forEach(b=>b.classList.remove('selected'));
+      document.getElementById('pcardHint').textContent = 'Click a contact card above to log who you spoke with';
+      document.getElementById('pcardHint').style.color = 'var(--muted)';
+      setTimeout(()=>{ st.textContent=''; }, 3000);
+    } else {
+      const e = await res.json();
+      st.textContent = '✗ ' + (e.error?.message || 'Error'); st.style.color = 'var(--red)';
+    }
+  } catch(e) {
+    st.textContent = '✗ Network error'; st.style.color = 'var(--red)';
+  }
+  btn.disabled = false;
+}
+
+async function refreshAll() {
+  const btn = document.getElementById('refreshBtn');
+  btn.classList.add('spinning'); btn.textContent = '↻ Refreshing...';
+  await loadStudents();
+  await loadUpcoming();
+  btn.classList.remove('spinning'); btn.textContent = '↻ Refresh';
+}
+
+async function openHistory(studentName) {
+  const { token, base } = getCfg();
+  const modal = document.getElementById('historyModal');
+  const body  = document.getElementById('historyBody');
+  document.getElementById('historyTitle').textContent = studentName;
+  body.innerHTML = '<div class="modal-loading">Loading history...</div>';
+  modal.classList.add('show');
+  try {
+    let allRecords = [], offset = null;
+    do {
+      const url = new URL(`https://api.airtable.com/v0/${base}/Communication Logs`);
+      url.searchParams.set('filterByFormula', `{${F.name}} = '${studentName.replace(/'/g,"\\'")}'`);
+      url.searchParams.append('sort[0][field]', F.date);
+      url.searchParams.append('sort[0][direction]', 'desc');
+      url.searchParams.set('pageSize', '100');
+      if (offset) url.searchParams.set('offset', offset);
+      const res  = await fetch(url.toString(), { headers: { 'Authorization': 'Bearer '+token }});
+      const data = await res.json();
+      allRecords = allRecords.concat(data.records || []);
+      offset = data.offset || null;
+    } while (offset);
+    if (!allRecords.length) { body.innerHTML = '<div class="modal-loading">No contact history found.</div>'; return; }
+    body.innerHTML = allRecords.map(r => {
+      const f = r.fields;
+      const rawDate = f[F.date];
+      const method = Array.isArray(f[F.method]) ? f[F.method].join(', ') : (f[F.method] || '—');
+      const notes  = f[F.notes] || '';
+      const hasBulkDates = /\b\d{1,2}\/\d{1,2}\b/.test(notes);
+      const date = rawDate
+        ? hasBulkDates
+          ? new Date(rawDate+'T00:00:00').toLocaleDateString('en-US',{month:'long',year:'numeric'})
+          : new Date(rawDate+'T00:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})
+        : '—';
+      return `<div class="hentry">
+        <div class="hdate">${date}</div>
+        <div class="hnotes">${notes || '<span style="opacity:.4">No notes</span>'}</div>
+        <div class="hmethod">${method}</div>
+      </div>`;
+    }).join('');
+  } catch(e) {
+    body.innerHTML = '<div class="modal-loading">Error loading history.</div>';
+  }
+}
+
+function closeHistory(e) {
+  if (e.target === document.getElementById('historyModal'))
+    document.getElementById('historyModal').classList.remove('show');
+}
+
+async function loadUpcoming() {
+  const { token, base } = getCfg();
+  if (!token || !base) {
+    document.getElementById('loadingMsg').textContent = 'Complete setup to load data.';
+    return;
+  }
+  document.getElementById('loadingMsg').style.display = 'block';
+  document.getElementById('loadingMsg').textContent = 'Loading contact schedule...';
+  document.getElementById('upcomingContent').style.display = 'none';
+
+  try {
+    let allRecords = [], offset = null;
+    do {
+      const url = new URL(`https://api.airtable.com/v0/${base}/Communication Logs`);
+      url.searchParams.set('fields[]', F.name);
+      url.searchParams.append('fields[]', F.date);
+      url.searchParams.append('fields[]', F.next);
+      url.searchParams.append('fields[]', F.method);
+      url.searchParams.append('sort[0][field]', F.date);
+      url.searchParams.append('sort[0][direction]', 'desc');
+      url.searchParams.set('pageSize', '100');
+      if (offset) url.searchParams.set('offset', offset);
+      const res = await fetch(url.toString(), { headers: { 'Authorization': 'Bearer '+token }});
+      if (!res.ok) throw new Error('API error ' + res.status);
+      const data = await res.json();
+      allRecords = allRecords.concat(data.records || []);
+      offset = data.offset || null;
+    } while (offset);
+
+    const latest = {};
+    for (const r of allRecords) {
+      const f = r.fields;
+      let nm = f[F.name];
+      if (Array.isArray(nm)) nm = nm[0];
+      if (nm && typeof nm === 'object') nm = nm.name || nm.text || JSON.stringify(nm);
+      if (!nm || typeof nm !== 'string') continue;
+      nm = nm.trim();
+      const logDate = f[F.date] || null;
+      const next    = f[F.next] || null;
+      const method  = Array.isArray(f[F.method]) ? f[F.method][0] : (f[F.method] || null);
+      if (!latest[nm] || (logDate||'') > (latest[nm].logDate||''))
+        latest[nm] = { logDate, next, method };
+    }
+
+    const studentNames = [...document.getElementById('studentSel').options].map(o=>o.value).filter(Boolean);
+
+    function nextWeekday(dateStr) {
+      if (!dateStr) return null;
+      const d = new Date(dateStr+'T00:00:00');
+      if (d.getDay()===6) d.setDate(d.getDate()+2);
+      if (d.getDay()===0) d.setDate(d.getDate()+1);
+      return d.toISOString().split('T')[0];
+    }
+
+    const tod = new Date(); tod.setHours(0,0,0,0);
+    const in7  = new Date(tod); in7.setDate(in7.getDate()+7);
+    const in14 = new Date(tod); in14.setDate(in14.getDate()+14);
+    const thisWeek=[], nextWeek=[], thisMonth=[], overdue=[];
+
+    for (const nm of studentNames) {
+      const info = latest[nm];
+      if (!info?.next) { overdue.push({nm, logDate:info?.logDate||null, next:null, method:info?.method||null, hardOverdue:true}); continue; }
+      const nextAdj = nextWeekday(info.next);
+      const nd = new Date(nextAdj+'T00:00:00');
+      const daysOverdue = Math.round((tod-nd)/86400000);
+      if (daysOverdue > 14)       overdue.push({nm,...info,next:nextAdj,hardOverdue:false,daysOverdue});
+      else if (nd <= in7)         thisWeek.push({nm,...info,next:nextAdj,daysOverdue:daysOverdue>0?daysOverdue:0});
+      else if (nd <= in14)        nextWeek.push({nm,...info,next:nextAdj,daysOverdue:0});
+      else                        thisMonth.push({nm,...info,next:nextAdj,daysOverdue:0});
+    }
+
+    const byDateUrgent = (a,b) => {
+      if (a.daysOverdue>0 && b.daysOverdue===0) return -1;
+      if (a.daysOverdue===0 && b.daysOverdue>0) return 1;
+      if (!a.next && !b.next) return a.nm.localeCompare(b.nm);
+      if (!a.next) return 1; if (!b.next) return -1;
+      return a.next.localeCompare(b.next);
+    };
+    const byDate = (a,b) => {
+      if (!a.next && !b.next) return a.nm.localeCompare(b.nm);
+      if (!a.next) return -1; if (!b.next) return 1;
+      return b.next.localeCompare(a.next);
+    };
+    thisWeek.sort(byDateUrgent); nextWeek.sort(byDateUrgent);
+    thisMonth.sort((a,b)=>a.next.localeCompare(b.next)); overdue.sort(byDate);
+
+    document.getElementById('loadingMsg').style.display='none';
+    document.getElementById('upcomingContent').style.display='block';
+    document.getElementById('stats').innerHTML = `
+      <div class="stat"><div class="n" style="color:var(--red)">${thisWeek.length}</div><div class="l">Due This Week</div></div>
+      <div class="stat"><div class="n" style="color:var(--teal)">${nextWeek.length}</div><div class="l">Due Next Week</div></div>
+      <div class="stat"><div class="n" style="color:var(--blue)">${thisMonth.length}</div><div class="l">Due This Month</div></div>
+      <div class="stat"><div class="n" style="color:var(--muted)">${overdue.length}</div><div class="l">Overdue</div></div>
+      <div class="stat"><div class="n" style="color:var(--violet)">${studentNames.length}</div><div class="l">Students</div></div>`;
+
+    function fmt(d) {
+      if (!d) return 'Never';
+      return new Date(d+'T00:00:00').toLocaleDateString('en-US',{month:'short',year:'numeric'});
+    }
+    function fmtNext(d) {
+      if (!d) return '—';
+      const dt = new Date(d+'T00:00:00');
+      return dt.toLocaleDateString('en-US',{weekday:'short'}) + ', ' + dt.toLocaleDateString('en-US',{month:'short',day:'numeric'});
+    }
+    function diffLabel(daysOverdue, next, showCountdown) {
+      if (!next) return 'No log';
+      if (daysOverdue>0) return `${daysOverdue}d overdue`;
+      if (!showCountdown) return '';
+      const x = Math.round((new Date(next+'T00:00:00')-tod)/86400000);
+      if (x===0) return 'Due today';
+      return `in ${x}d`;
+    }
+
+    function render(el, items, rowCls, dateCls, badgeCls, dotCls, lbl, showCountdown) {
+      if (!items.length) { el.innerHTML=''; return; }
+      el.innerHTML = `
+        <div class="sec-hdr"><div class="sdot ${dotCls}"></div><span class="sec-lbl">${lbl} (${items.length})</span></div>
+        ${items.map(s => {
+          const isOverdueInGroup = s.daysOverdue > 0;
+          const rowClass   = isOverdueInGroup ? 'ov' : rowCls;
+          const dateClass  = isOverdueInGroup ? 'ov' : dateCls;
+          const badgeClass = isOverdueInGroup ? 'br' : badgeCls;
+          const countdown  = diffLabel(s.daysOverdue, s.next, showCountdown);
+          const dateLabel  = s.next ? 'Next contact' : 'Last contacted';
+          const dateVal    = s.next ? fmtNext(s.next) : fmt(s.logDate);
+          return `<div class="srow ${rowClass}${s.method==='Parent Reached Out'?' pending':''}">
+            <div><button class="sn-btn" onclick="openHistory('${s.nm.replace(/'/g,"\\'")}')">  ${s.nm}</button>${s.method==='Parent Reached Out'?'<span class="pending-flag">⚠ Reply Needed</span>':''}<div class="sl">Last: ${fmt(s.logDate)}</div></div>
+            <div class="sd ${dateClass}"><span class="sl2">${dateLabel}</span><span class="val">${dateVal}</span></div>
+            ${countdown ? `<div class="badge ${badgeClass}">${countdown}</div>` : '<div></div>'}
+          </div>`;
+        }).join('')}
+        <div class="divider"></div>`;
+    }
+
+    render(document.getElementById('thisWeekEl'),  thisWeek,  'ds','ds','ba','a','Due This Week',           true);
+    render(document.getElementById('nextWeekEl'),  nextWeek,  'ok','ok','bg','g','Due Next Week',           true);
+    render(document.getElementById('thisMonthEl'), thisMonth, 'bl','bl','bb','b','Due This Month & Beyond', false);
+    render(document.getElementById('overdueEl'),   overdue,   'ov','ov','br','r','Overdue / No Log',        false);
+
+  } catch(e) {
+    document.getElementById('loadingMsg').style.display='block';
+    document.getElementById('loadingMsg').textContent = 'Error loading data: ' + e.message;
+  }
+}
+
+// ══════════════════════════════════════════════════════
+// SCHEDULER
+// ══════════════════════════════════════════════════════
+const SLOTS_TABLE = 'Call Slots';
+let selectedParents = new Set();
+
+function fmtSlotDT(iso) {
+  const d = new Date(iso);
+  return d.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'}) + ' · ' +
+    d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
+}
+
+function generateToken() {
+  return Math.random().toString(36).slice(2,10) + Math.random().toString(36).slice(2,10);
+}
+
+async function addSlot() {
+  const date = document.getElementById('slotDate').value;
+  const time = document.getElementById('slotTime').value;
+  if (!date || !time) { alert('Pick a date and time.'); return; }
+  const iso = date + 'T' + time + ':00';
+  const tok = generateToken();
+  const { token, base } = getCfg();
+
+  const btn = document.getElementById('addSlotBtn');
+  btn.textContent = 'Saving...'; btn.disabled = true;
+
+  try {
+    const res = await fetch(`https://api.airtable.com/v0/${base}/${encodeURIComponent(SLOTS_TABLE)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      body: JSON.stringify({ records: [{ fields: { 'Token': tok, 'DateTime': iso } }] })
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      alert('Airtable error: ' + (data?.error?.message || data?.error?.type || JSON.stringify(data)));
+      btn.textContent = '+ Add Slot'; btn.disabled = false;
+      return;
+    }
+    btn.textContent = '+ Add Slot'; btn.disabled = false;
+    loadSlots();
+  } catch(e) {
+    alert('Network error: ' + e.message);
+    btn.textContent = '+ Add Slot'; btn.disabled = false;
+  }
+}
+
+async function loadSlots() {
+  const { token, base } = getCfg();
+  const el = document.getElementById('slotsList');
+  el.innerHTML = '<div style="font-family:\'DM Mono\',monospace;font-size:12px;color:var(--muted);text-align:center;padding:16px">Loading...</div>';
+  try {
+    const res = await fetch(
+      `https://api.airtable.com/v0/${base}/${encodeURIComponent(SLOTS_TABLE)}?sort[0][field]=DateTime&sort[0][direction]=asc`,
+      { headers: { 'Authorization': 'Bearer ' + token } }
+    );
+    const data = await res.json();
+    const slots = data.records || [];
+    if (!slots.length) { el.innerHTML='<div style="font-family:\'DM Mono\',monospace;font-size:12px;color:var(--muted);text-align:center;padding:16px">No slots yet — add one above</div>'; return; }
+    el.innerHTML = slots.map(s => {
+      const booked = s.fields.Booked;
+      return `<div class="slot-item${booked?' booked':''}">
+        <div>
+          <div class="slot-info">${fmtSlotDT(s.fields.DateTime)}</div>
+          ${booked ? `<div class="slot-booked-by">✓ Booked by ${s.fields.BookedBy||'?'}</div>` : ''}
+        </div>
+        ${!booked ? `<button class="slot-remove" onclick="deleteSlot('${s.id}', this)">✕</button>` : ''}
+      </div>`;
+    }).join('');
+  } catch(e) {
+    el.innerHTML = `<div style="color:var(--red);font-family:'DM Mono',monospace;font-size:12px">Error loading slots: ${e.message}</div>`;
+  }
+}
+
+async function deleteSlot(recordId, btn) {
+  const { token, base } = getCfg();
+  btn.disabled = true; btn.textContent = '…';
+  try {
+    await fetch(`https://api.airtable.com/v0/${base}/${encodeURIComponent(SLOTS_TABLE)}/${recordId}`, {
+      method: 'DELETE', headers: { 'Authorization': 'Bearer ' + token }
+    });
+    loadSlots();
+  } catch(e) { btn.disabled = false; btn.textContent = '✕'; alert('Error deleting slot.'); }
+}
+
+function buildParentSelGrid() {
+  const grid = document.getElementById('parentSelGrid');
+  const names = Object.keys(PARENTS).sort();
+  if (!names.length) { grid.innerHTML='<div style="font-family:\'DM Mono\',monospace;font-size:12px;color:var(--muted)">No students loaded.</div>'; return; }
+  grid.innerHTML = names.map(nm=>`<div class="parent-chip" data-name="${nm}" onclick="toggleParent('${nm.replace(/'/g,"\\'")}',this)">${nm}</div>`).join('');
+}
+
+function toggleParent(nm, el) {
+  if (selectedParents.has(nm)) { selectedParents.delete(nm); el.classList.remove('selected'); }
+  else { selectedParents.add(nm); el.classList.add('selected'); }
+}
+
+async function generateLinks() {
+  const { token, base } = getCfg();
+  if (!selectedParents.size) { alert('Select at least one parent.'); return; }
+  const out = document.getElementById('linksOutput');
+  out.innerHTML = '<div style="font-family:\'DM Mono\',monospace;font-size:12px;color:var(--muted);padding:12px 0">Loading slots...</div>';
+
+  let slots = [];
+  try {
+    const res = await fetch(
+      `https://api.airtable.com/v0/${base}/${encodeURIComponent(SLOTS_TABLE)}?filterByFormula=NOT({Booked})&sort[0][field]=DateTime`,
+      { headers: { 'Authorization': 'Bearer ' + token } }
+    );
+    const data = await res.json();
+    slots = data.records || [];
+  } catch(e) { out.innerHTML=`<div style="color:var(--red);font-family:'DM Mono',monospace;font-size:12px">Error: ${e.message}</div>`; return; }
+
+  if (!slots.length) { out.innerHTML='<div style="color:var(--amber);font-family:\'DM Mono\',monospace;font-size:12px">No available slots — add some first.</div>'; return; }
+
+  const baseUrl = window.location.href.split('?')[0];
+  out.innerHTML = [...selectedParents].sort().map(nm => {
+    const tok = btoa(encodeURIComponent(JSON.stringify({name:nm})));
+    const link = `${baseUrl}?book=${tok}`;
+    return `<div class="parent-link-row">
+      <div><div class="parent-link-name">${nm}</div><div class="parent-link-url">${link.slice(0,55)}...</div></div>
+      <button class="copy-link-btn" onclick="copyLink(this,'${link}')">Copy Link</button>
+    </div>`;
+  }).join('');
+  selectedParents=new Set();
+  document.querySelectorAll('.parent-chip').forEach(c=>c.classList.remove('selected'));
+  loadBookingsSummary();
+}
+
+function copyLink(btn, link) {
+  navigator.clipboard.writeText(link).then(()=>{
+    btn.textContent='✓ Copied!'; btn.classList.add('copied');
+    setTimeout(()=>{ btn.textContent='Copy Link'; btn.classList.remove('copied'); },2000);
+  });
+}
+
+async function loadBookingsSummary() {
+  const { token, base } = getCfg();
+  const el = document.getElementById('bookingsSummary');
+  if (!el || !token) return;
+  try {
+    const res = await fetch(`https://api.airtable.com/v0/${base}/${encodeURIComponent(SLOTS_TABLE)}?filterByFormula={Booked}=TRUE()&sort[0][field]=DateTime`,
+      {headers:{'Authorization':'Bearer '+token}});
+    const data = await res.json();
+    if (!data.records?.length) { el.innerHTML='<div style="font-family:\'DM Mono\',monospace;font-size:12px;color:var(--muted)">No bookings yet.</div>'; return; }
+    el.innerHTML = data.records.map(r=>`<div class="slot-item booked">
+      <div><div class="slot-info">${fmtSlotDT(r.fields.DateTime)}</div><div class="slot-booked-by">✓ ${r.fields.StudentName} — booked by ${r.fields.BookedBy}</div></div>
+    </div>`).join('');
+  } catch(e) { el.innerHTML='<div style="font-family:\'DM Mono\',monospace;font-size:12px;color:var(--muted)">Could not load bookings.</div>'; }
+}
+
+// ── Booking page (parent view) ───────────────────────────────────────────────
+async function initBookingPage() {
+  const params = new URLSearchParams(window.location.search);
+  const raw = params.get('book');
+  if (!raw) return false;
+
+  // Completely replace page — parents see nothing of the tracker
+  document.body.innerHTML = `
+    <div class="booking-wrap">
+      <div style="text-align:center;margin-bottom:24px;padding-top:40px">
+        <div style="font-size:32px;margin-bottom:8px">📞</div>
+        <div style="font-family:'DM Serif Display',serif;font-size:20px;color:var(--violet)">Schedule a Call</div>
+      </div>
+      <div class="booking-card" id="bookingCard"><div class="modal-loading">Loading available times...</div></div>
+    </div>`;
+
+  const card = document.getElementById('bookingCard');
+  let payload;
+  try { payload = JSON.parse(decodeURIComponent(atob(raw))); }
+  catch { card.innerHTML='<div class="modal-loading" style="color:var(--red)">Invalid booking link.</div>'; return true; }
+
+  const studentName = payload.name;
+
+  // Fetch all currently unbooked slots live from Airtable
+  let allSlots=[];
+  try {
+    const res = await fetch(`https://api.airtable.com/v0/${base}/${encodeURIComponent(SLOTS_TABLE)}?filterByFormula=NOT({Booked})&sort[0][field]=DateTime`,
+      {headers:{'Authorization':'Bearer '+token}});
+    const data = await res.json();
+    allSlots = data.records||[];
+  } catch(e) { card.innerHTML='<div class="modal-loading" style="color:var(--red)">Could not load available times.</div>'; return true; }
+
+  renderBookingCard(card, studentName, allSlots);
+  return true;
+}
+
+let selectedSlotRecordId = null;
+
+function renderBookingCard(card, studentName, slots) {
+  if (!slots.length) { card.innerHTML='<div class="booking-success"><div class="check">😔</div><h2 style="color:var(--red)">No slots available</h2><p>All times have been taken. Please contact your teacher directly.</p></div>'; return; }
+  card.innerHTML = `
+    <div class="booking-title">Pick a time to talk</div>
+    <div class="booking-sub">Your teacher would like to connect with you about <strong>${studentName}</strong>. Select an available time below.</div>
+    <div class="booking-slots" id="bookingSlots">
+      ${slots.map(s=>`<div class="booking-slot${s.fields.Booked?' taken':''}" data-id="${s.id}" onclick="selectBookingSlot(this,'${s.id}')">
+        <span class="slot-dt">${fmtSlotDT(s.fields.DateTime)}</span>
+        ${s.fields.Booked?'<span class="slot-taken-lbl">Taken</span>':''}
+      </div>`).join('')}
+    </div>
+    <div class="booking-name-row"><label>Your name</label><input type="text" id="bookingName" placeholder="e.g. Maria Garcia" style="margin-bottom:0"></div>
+    <button class="btn booking-confirm" onclick="confirmBooking('${studentName}')">Confirm Booking</button>
+    <div id="bookingErr" style="font-family:'DM Mono',monospace;font-size:11px;color:var(--red);margin-top:10px;display:none"></div>`;
+}
+
+function selectBookingSlot(el, id) {
+  document.querySelectorAll('.booking-slot').forEach(s=>s.classList.remove('selected'));
+  el.classList.add('selected'); selectedSlotRecordId = id;
+}
+
+async function confirmBooking(studentName) {
+  const { token, base } = getCfg();
+  const parentName = document.getElementById('bookingName').value.trim();
+  const err = document.getElementById('bookingErr');
+  if (!selectedSlotRecordId) { err.textContent='Please select a time.'; err.style.display='block'; return; }
+  if (!parentName) { err.textContent='Please enter your name.'; err.style.display='block'; return; }
+  err.style.display='none';
+  const btn = document.querySelector('.booking-confirm');
+  btn.disabled=true; btn.textContent='Confirming...';
+  try {
+    const slotRes = await fetch(`https://api.airtable.com/v0/${base}/${encodeURIComponent(SLOTS_TABLE)}/${selectedSlotRecordId}`,{
+      method:'PATCH', headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},
+      body: JSON.stringify({fields:{Booked:true,BookedBy:parentName,StudentName:studentName}})
+    });
+    if (!slotRes.ok) throw new Error();
+    const slotData = await slotRes.json();
+    const dt = slotData.fields.DateTime;
+    const callDate = dt.split('T')[0];
+    await fetch(`https://api.airtable.com/v0/${base}/Communication Logs`,{
+      method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},
+      body: JSON.stringify({records:[{fields:{
+        'Student Name': studentName,
+        'Log Date': new Date().toISOString().split('T')[0],
+        'Method': ['Parent Reached Out'],
+        'Notes': `Call scheduled by ${parentName} for ${fmtSlotDT(dt)}`,
+        'Next Contact': callDate
+      }}]})
+    });
+    document.getElementById('bookingCard').innerHTML=`<div class="booking-success"><div class="check">✅</div><h2>You're all set!</h2><p>Your call has been scheduled for<br><strong>${fmtSlotDT(dt)}</strong>.<br><br>Your teacher will call you at that time.</p></div>`;
+  } catch(e) { btn.disabled=false; btn.textContent='Confirm Booking'; err.textContent='Something went wrong. Please try again.'; err.style.display='block'; }
+}
+</script>
+</body>
+</html>
